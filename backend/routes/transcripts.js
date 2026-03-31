@@ -3,11 +3,16 @@ const router = express.Router();
 const { extractDecisions, extractActionItems } = require('../ai-service');
 const multer = require('multer');
 
+const ALLOWED_EXTENSIONS = ['.txt', '.vtt'];
+
+const isAllowedFile = (filename) =>
+  ALLOWED_EXTENSIONS.some((ext) => filename.endsWith(ext));
+
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    if (file.originalname.endsWith('.txt') || file.originalname.endsWith('.vtt')) {
+    if (isAllowedFile(file.originalname)) {
       cb(null, true);
     } else {
       cb(new Error('Only .txt and .vtt files allowed'));

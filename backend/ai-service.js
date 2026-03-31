@@ -6,7 +6,6 @@ async function extractDecisions(transcript) {
     .filter((s) => keywords.some((k) => s.toLowerCase().includes(k)))
     .slice(0, 10)
     .map((s) => ({ text: s, confidence: 0.75 }));
-
   if (extracted.length === 0) {
     // Fallback: pick sentences that look like decisions
     return sentences
@@ -19,8 +18,8 @@ async function extractDecisions(transcript) {
 }
 
 async function extractActionItems(transcript) {
-  // Keyword-based extraction
-  const keywords = ['will ', 'needs to', 'need to', 'should ', 'must ', 'action item', 'task:', 'to-do', 'follow up', 'responsible for', 'assigned to'];
+  // Keyword-based extraction - use word-boundary-aware matching for single words
+  const keywords = ['will', 'needs to', 'need to', 'should', 'must', 'action item', 'task:', 'to-do', 'follow up', 'responsible for', 'assigned to'];
   const sentences = transcript.split(/[.!?\n]/).map((s) => s.trim()).filter((s) => s.length > 10);
   const extracted = sentences
     .filter((s) => keywords.some((k) => s.toLowerCase().includes(k)))
@@ -58,7 +57,7 @@ async function askChatbot(question, context) {
 
   if (lowerQuestion.includes('action') || lowerQuestion.includes('task') || lowerQuestion.includes('todo')) {
     const lines = context.split('\n').filter((l) =>
-      ['will ', 'needs to', 'should ', 'assigned to'].some((k) => l.toLowerCase().includes(k))
+      ['will', 'needs to', 'should', 'assigned to'].some((k) => l.toLowerCase().includes(k))
     );
     if (lines.length > 0) {
       return `Action items found in the transcripts:\n\n${lines.slice(0, 5).join('\n')}`;

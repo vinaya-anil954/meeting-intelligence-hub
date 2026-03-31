@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Sentiment = require('sentiment');
 
-const sentiment = new Sentiment();
+const sentimentAnalyzer = new Sentiment();
 
 // Get sentiment by transcript
 router.get('/transcript/:transcriptId', async (req, res) => {
@@ -62,7 +62,7 @@ router.post('/analyze/:transcriptId', async (req, res) => {
 
     for (let i = 0; i < lines.length; i += segmentSize) {
       const segment = lines.slice(i, i + segmentSize).join(' ');
-      const analysis = sentiment.analyze(segment);
+      const analysis = sentimentAnalyzer.analyze(segment);
       const normalizedScore = Math.max(-1, Math.min(1, analysis.score / 5));
 
       let sentimentLabel = 'neutral';

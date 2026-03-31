@@ -36,7 +36,7 @@ export default function SentimentChart({ projectId }) {
 
       const lineData = rows.map((row, i) => ({
         name: `Seg ${i + 1}`,
-        score: parseFloat(row.sentiment_score.toFixed(2)),
+        score: Math.round(row.sentiment_score * 100) / 100,
         label: row.sentiment_label,
       }));
 
