@@ -73,11 +73,13 @@ app.post("/api/meetings", async (req, res) => {
     );
 
     const meetingId = meetingResult.rows[0].id;
+    console.log(`\n?? Meeting created: ID ${meetingId}`);
 
     // Extract decisions and action items using AI
     try {
       console.log("?? Extracting decisions...");
       const decisions = await extractDecisions(transcript);
+      console.log("Decisions extracted:", decisions);
       
       for (const decision of decisions) {
         await client.query(
@@ -85,10 +87,11 @@ app.post("/api/meetings", async (req, res) => {
           [meetingId, decision]
         );
       }
-      console.log(`? Extracted ${decisions.length} decisions`);
+      console.log(`? Inserted ${decisions.length} decisions`);
 
       console.log("?? Extracting action items...");
       const actionItems = await extractActionItems(transcript);
+      console.log("Action items extracted:", actionItems);
       
       for (const item of actionItems) {
         await client.query(
@@ -96,10 +99,9 @@ app.post("/api/meetings", async (req, res) => {
           [meetingId, item.action, item.assigned_to || null, item.due_date || null]
         );
       }
-      console.log(`? Extracted ${actionItems.length} action items`);
+      console.log(`? Inserted ${actionItems.length} action items`);
     } catch (aiError) {
-      console.error("AI extraction failed:", aiError);
-      // Continue anyway - meeting is created, just no AI extraction
+      console.error("? AI extraction failed:", aiError.message);
     }
 
     // Fetch the complete meeting with extracted data
@@ -112,7 +114,7 @@ app.post("/api/meetings", async (req, res) => {
       action_items: actionItemsResult.rows,
     });
   } catch (error) {
-    console.error(error);
+    console.error("? Error:", error);
     res.status(500).json({ error: "Failed to create meeting" });
   }
 });
