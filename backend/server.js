@@ -1,185 +1,58 @@
-const express = require("express");
-const cors = require("cors");
-const { Client } = require("pg");
-const { extractDecisions, extractActionItems } = require("./ai-service");
-require("dotenv").config();
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+const { Pool } = require('pg');
+const multer = require('multer');
 
 const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Database client
-const client = new Client({
+// Database pool
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-client.connect().catch(err => console.error("Database connection error:", err));
+pool.on('error', (err) => console.error('Unexpected error on idle client', err));
+global.db = pool;
+
+// Multer setup for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.originalname.endsWith('.txt') || file.originalname.endsWith('.vtt')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .txt and .vtt files allowed'));
+    }
+  },
+});
+global.upload = upload;
+
+// Routes
+const projectRoutes = require('./routes/projects');
+const transcriptRoutes = require('./routes/transcripts');
+const decisionRoutes = require('./routes/decisions');
+const actionItemRoutes = require('./routes/action-items');
+const sentimentRoutes = require('./routes/sentiment');
+const chatRoutes = require('./routes/chat');
+const exportRoutes = require('./routes/export');
+
+app.use('/api/projects', projectRoutes);
+app.use('/api/transcripts', transcriptRoutes);
+app.use('/api/decisions', decisionRoutes);
+app.use('/api/action-items', actionItemRoutes);
+app.use('/api/sentiment', sentimentRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/export', exportRoutes);
 
 // Health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "Backend is running!" });
-});
-
-// Get all meetings
-app.get("/api/meetings", async (req, res) => {
-  try {
-    const result = await client.query("SELECT * FROM meetings ORDER BY created_at DESC");
-    res.json(result.rows);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch meetings" });
-  }
-});
-
-// Get meeting by ID with decisions and action items
-app.get("/api/meetings/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const meetingResult = await client.query("SELECT * FROM meetings WHERE id = $1", [id]);
-    const decisionsResult = await client.query("SELECT * FROM decisions WHERE meeting_id = $1", [id]);
-    const actionItemsResult = await client.query("SELECT * FROM action_items WHERE meeting_id = $1", [id]);
-
-    if (meetingResult.rows.length === 0) {
-      return res.status(404).json({ error: "Meeting not found" });
-    }
-
-    res.json({
-      meeting: meetingResult.rows[0],
-      decisions: decisionsResult.rows,
-      action_items: actionItemsResult.rows,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch meeting" });
-  }
-});
-
-// Create a new meeting with AI extraction
-app.post("/api/meetings", async (req, res) => {
-  try {
-    const { title, transcript } = req.body;
-
-    if (!title || !transcript) {
-      return res.status(400).json({ error: "Title and transcript are required" });
-    }
-
-    // Insert meeting
-    const meetingResult = await client.query(
-      "INSERT INTO meetings (title, transcript) VALUES ($1, $2) RETURNING *",
-      [title, transcript]
-    );
-
-    const meetingId = meetingResult.rows[0].id;
-
-    // Extract decisions and action items using AI
-    try {
-      console.log("?? Extracting decisions...");
-      const decisions = await extractDecisions(transcript);
-      
-      for (const decision of decisions) {
-        await client.query(
-          "INSERT INTO decisions (meeting_id, decision) VALUES ($1, $2)",
-          [meetingId, decision]
-        );
-      }
-      console.log(`? Extracted ${decisions.length} decisions`);
-
-      console.log("?? Extracting action items...");
-      const actionItems = await extractActionItems(transcript);
-      
-      for (const item of actionItems) {
-        await client.query(
-          "INSERT INTO action_items (meeting_id, action, assigned_to, due_date) VALUES ($1, $2, $3, $4)",
-          [meetingId, item.action, item.assigned_to || null, item.due_date || null]
-        );
-      }
-      console.log(`? Extracted ${actionItems.length} action items`);
-    } catch (aiError) {
-      console.error("AI extraction failed:", aiError);
-      // Continue anyway - meeting is created, just no AI extraction
-    }
-
-    // Fetch the complete meeting with extracted data
-    const decisionsResult = await client.query("SELECT * FROM decisions WHERE meeting_id = $1", [meetingId]);
-    const actionItemsResult = await client.query("SELECT * FROM action_items WHERE meeting_id = $1", [meetingId]);
-
-    res.status(201).json({
-      meeting: meetingResult.rows[0],
-      decisions: decisionsResult.rows,
-      action_items: actionItemsResult.rows,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to create meeting" });
-  }
-});
-
-// Add a decision to a meeting
-app.post("/api/meetings/:id/decisions", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { decision } = req.body;
-
-    if (!decision) {
-      return res.status(400).json({ error: "Decision text is required" });
-    }
-
-    const result = await client.query(
-      "INSERT INTO decisions (meeting_id, decision) VALUES ($1, $2) RETURNING *",
-      [id, decision]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to add decision" });
-  }
-});
-
-// Add an action item to a meeting
-app.post("/api/meetings/:id/action-items", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { action, assigned_to, due_date } = req.body;
-
-    if (!action) {
-      return res.status(400).json({ error: "Action text is required" });
-    }
-
-    const result = await client.query(
-      "INSERT INTO action_items (meeting_id, action, assigned_to, due_date) VALUES ($1, $2, $3, $4) RETURNING *",
-      [id, action, assigned_to, due_date]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to add action item" });
-  }
-});
-
-// Mark action item as completed
-app.patch("/api/action-items/:id/complete", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await client.query(
-      "UPDATE action_items SET completed = TRUE WHERE id = $1 RETURNING *",
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Action item not found" });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to update action item" });
-  }
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'Backend is running!' });
 });
 
 const PORT = process.env.PORT || 5000;
