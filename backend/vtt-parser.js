@@ -56,7 +56,7 @@ function parseVTT(content) {
     if (cleaned) textLines.push(cleaned);
   }
 
-  const text = textLines.join(' ');
+  const text = textLines.join('\n');
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
   return {
@@ -88,7 +88,7 @@ function parseTXT(content) {
     textLines.push(trimmed);
   }
 
-  const text = textLines.join(' ');
+  const text = textLines.join('\n');
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
   return {

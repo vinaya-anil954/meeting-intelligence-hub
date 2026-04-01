@@ -15,9 +15,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Rate limiting — apply globally to all /api routes
+// Rate limiting
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
@@ -25,7 +25,6 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-// Stricter limit for upload and AI-heavy endpoints
 const heavyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -33,30 +32,27 @@ const heavyLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
 });
-// Multer — store files in memory for processing
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (ext === ".txt" || ext === ".vtt") {
       cb(null, true);
     } else {
-      cb(new Error(`Unsupported file type: ${ext}. Only .txt and .vtt are allowed.`));
+      cb(new Error("Unsupported file type: " + ext + ". Only .txt and .vtt are allowed."));
     }
   },
 });
 
-// Database client
 const client = new Client({
   connectionString: process.env.DATABASE_URL,
 });
 
 client.connect().catch((err) => console.error("Database connection error:", err));
 
-// ---------------------------------------------------------------------------
 // Health check
-// ---------------------------------------------------------------------------
 app.get("/api/health", (req, res) => {
   res.json({ status: "Backend is running!" });
 });
@@ -65,12 +61,9 @@ app.get("/api/health", (req, res) => {
 // Projects
 // ---------------------------------------------------------------------------
 
-// GET /api/projects — list all projects
 app.get("/api/projects", async (req, res) => {
   try {
-    const result = await client.query(
-      "SELECT * FROM projects ORDER BY created_at DESC"
-    );
+    const result = await client.query("SELECT * FROM projects ORDER BY created_at DESC");
     res.json(result.rows);
   } catch (error) {
     console.error(error);
@@ -78,7 +71,6 @@ app.get("/api/projects", async (req, res) => {
   }
 });
 
-// POST /api/projects — create a new project
 app.post("/api/projects", async (req, res) => {
   try {
     const { name, description } = req.body;
@@ -96,7 +88,6 @@ app.post("/api/projects", async (req, res) => {
   }
 });
 
-// GET /api/projects/:id — get a single project
 app.get("/api/projects/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -111,11 +102,34 @@ app.get("/api/projects/:id", async (req, res) => {
   }
 });
 
+app.delete("/api/projects/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await client.query("DELETE FROM chat_messages WHERE project_id = $1", [id]);
+    await client.query(
+      "DELETE FROM action_items WHERE transcript_id IN (SELECT id FROM transcripts WHERE project_id = $1)",
+      [id]
+    );
+    await client.query(
+      "DELETE FROM decisions WHERE transcript_id IN (SELECT id FROM transcripts WHERE project_id = $1)",
+      [id]
+    );
+    await client.query("DELETE FROM transcripts WHERE project_id = $1", [id]);
+    const result = await client.query("DELETE FROM projects WHERE id = $1 RETURNING id", [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    res.json({ message: "Project deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete project" });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Transcripts
 // ---------------------------------------------------------------------------
 
-// POST /api/transcripts/upload — multipart upload of .txt/.vtt files
 app.post("/api/transcripts/upload", heavyLimiter, upload.array("files"), async (req, res) => {
   try {
     const { projectId } = req.body;
@@ -123,7 +137,6 @@ app.post("/api/transcripts/upload", heavyLimiter, upload.array("files"), async (
       return res.status(400).json({ error: "projectId is required" });
     }
 
-    // Verify project exists
     const projectCheck = await client.query("SELECT id FROM projects WHERE id = $1", [projectId]);
     if (projectCheck.rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
@@ -139,7 +152,6 @@ app.post("/api/transcripts/upload", heavyLimiter, upload.array("files"), async (
       const ext = path.extname(file.originalname).toLowerCase().replace(".", "");
       const rawContent = file.buffer.toString("utf8");
 
-      // Parse the file content
       let parsed;
       if (ext === "vtt") {
         parsed = parseVTT(rawContent);
@@ -150,15 +162,12 @@ app.post("/api/transcripts/upload", heavyLimiter, upload.array("files"), async (
       const { text, speakers, wordCount } = parsed;
       const title = path.basename(file.originalname, path.extname(file.originalname));
 
-      // Insert transcript
       const transcriptResult = await client.query(
-        `INSERT INTO transcripts (project_id, title, content, file_type, word_count, speaker_count)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        "INSERT INTO transcripts (project_id, title, content, file_type, word_count, speaker_count) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
         [projectId, title, text, ext, wordCount, speakers.length]
       );
       const transcript = transcriptResult.rows[0];
 
-      // AI extraction (non-blocking on failure)
       try {
         const decisions = await extractDecisions(text);
         for (const decision of decisions) {
@@ -196,7 +205,6 @@ app.post("/api/transcripts/upload", heavyLimiter, upload.array("files"), async (
   }
 });
 
-// GET /api/transcripts/project/:projectId — list transcripts for a project
 app.get("/api/transcripts/project/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -211,14 +219,10 @@ app.get("/api/transcripts/project/:projectId", async (req, res) => {
   }
 });
 
-// GET /api/transcripts/:id — get a single transcript with decisions and action items
 app.get("/api/transcripts/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const transcriptResult = await client.query(
-      "SELECT * FROM transcripts WHERE id = $1",
-      [id]
-    );
+    const transcriptResult = await client.query("SELECT * FROM transcripts WHERE id = $1", [id]);
     if (transcriptResult.rows.length === 0) {
       return res.status(404).json({ error: "Transcript not found" });
     }
@@ -241,14 +245,10 @@ app.get("/api/transcripts/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/transcripts/:id — delete a transcript
 app.delete("/api/transcripts/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await client.query(
-      "DELETE FROM transcripts WHERE id = $1 RETURNING id",
-      [id]
-    );
+    const result = await client.query("DELETE FROM transcripts WHERE id = $1 RETURNING id", [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Transcript not found" });
     }
@@ -263,7 +263,6 @@ app.delete("/api/transcripts/:id", async (req, res) => {
 // Action items
 // ---------------------------------------------------------------------------
 
-// PATCH /api/action-items/:id — update an action item (toggle completed etc.)
 app.patch("/api/action-items/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -282,7 +281,6 @@ app.patch("/api/action-items/:id", async (req, res) => {
   }
 });
 
-// Keep legacy route for backward compatibility
 app.patch("/api/action-items/:id/complete", async (req, res) => {
   try {
     const { id } = req.params;
@@ -300,14 +298,10 @@ app.patch("/api/action-items/:id/complete", async (req, res) => {
   }
 });
 
-// DELETE /api/action-items/:id
 app.delete("/api/action-items/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await client.query(
-      "DELETE FROM action_items WHERE id = $1 RETURNING id",
-      [id]
-    );
+    const result = await client.query("DELETE FROM action_items WHERE id = $1 RETURNING id", [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Action item not found" });
     }
@@ -325,10 +319,7 @@ app.delete("/api/action-items/:id", async (req, res) => {
 app.get("/api/sentiment/transcript/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const transcriptResult = await client.query(
-      "SELECT content FROM transcripts WHERE id = $1",
-      [id]
-    );
+    const transcriptResult = await client.query("SELECT content FROM transcripts WHERE id = $1", [id]);
     if (transcriptResult.rows.length === 0) {
       return res.status(404).json({ error: "Transcript not found" });
     }
@@ -391,7 +382,6 @@ app.get("/api/sentiment/transcript/:id", async (req, res) => {
 // Chat
 // ---------------------------------------------------------------------------
 
-// GET /api/chat/history/:projectId — fetch chat message history
 app.get("/api/chat/history/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -406,7 +396,6 @@ app.get("/api/chat/history/:projectId", async (req, res) => {
   }
 });
 
-// Shared handler for chat ask endpoints
 async function handleChatAsk(req, res) {
   try {
     const { projectId, question } = req.body;
@@ -417,22 +406,17 @@ async function handleChatAsk(req, res) {
       return res.status(400).json({ error: "projectId is required" });
     }
 
-    // Fetch all transcripts for the project
     const transcriptsResult = await client.query(
       "SELECT id, title, content FROM transcripts WHERE project_id = $1",
       [projectId]
     );
     const transcripts = transcriptsResult.rows;
 
-    // Get AI answer
     const { answer, sources } = await chatQuery(question, transcripts);
-
     const sourceSummary = sources.map((s) => s.transcript_title).join(", ") || "N/A";
 
-    // Persist the message
     const msgResult = await client.query(
-      `INSERT INTO chat_messages (project_id, user_question, ai_response, source_transcripts)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      "INSERT INTO chat_messages (project_id, user_question, ai_response, source_transcripts) VALUES ($1, $2, $3, $4) RETURNING *",
       [projectId, question.trim(), answer, sourceSummary]
     );
 
@@ -446,10 +430,7 @@ async function handleChatAsk(req, res) {
   }
 }
 
-// POST /api/chat/ask — ask a question about a project's transcripts
 app.post("/api/chat/ask", heavyLimiter, handleChatAsk);
-
-// POST /api/chat — alias for /api/chat/ask (matches App.jsx usage)
 app.post("/api/chat", heavyLimiter, handleChatAsk);
 
 // ---------------------------------------------------------------------------
@@ -458,39 +439,16 @@ app.post("/api/chat", heavyLimiter, handleChatAsk);
 
 async function getProjectExportData(projectId) {
   const rows = await client.query(
-    `SELECT
-       t.title AS transcript_title,
-       'Decision' AS type,
-       d.decision AS content,
-       NULL AS assigned_to,
-       NULL AS due_date,
-       NULL AS completed
-     FROM decisions d
-     JOIN transcripts t ON t.id = d.transcript_id
-     WHERE t.project_id = $1
-     UNION ALL
-     SELECT
-       t.title AS transcript_title,
-       'Action Item' AS type,
-       ai.action AS content,
-       ai.assigned_to,
-       ai.due_date,
-       ai.completed::text
-     FROM action_items ai
-     JOIN transcripts t ON t.id = ai.transcript_id
-     WHERE t.project_id = $1
-     ORDER BY transcript_title, type`,
+    "SELECT t.title AS transcript_title, 'Decision' AS type, d.decision AS content, NULL AS assigned_to, NULL AS due_date, NULL AS completed FROM decisions d JOIN transcripts t ON t.id = d.transcript_id WHERE t.project_id = $1 UNION ALL SELECT t.title AS transcript_title, 'Action Item' AS type, ai.action AS content, ai.assigned_to, ai.due_date, ai.completed::text FROM action_items ai JOIN transcripts t ON t.id = ai.transcript_id WHERE t.project_id = $1 ORDER BY transcript_title, type",
     [projectId]
   );
   return rows.rows;
 }
 
-// Sanitize a string for safe use in a Content-Disposition filename
 function sanitizeFilename(value) {
   return String(value).replace(/[^a-zA-Z0-9_\-]/g, "_");
 }
 
-// GET /api/export/csv/:projectId — export as CSV
 app.get("/api/export/csv/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -499,7 +457,7 @@ app.get("/api/export/csv/:projectId", async (req, res) => {
 
     const header = "Transcript,Type,Content,Assigned To,Due Date,Completed\n";
     const csvRows = data.map((row) => {
-      const escape = (v) => `"${String(v || "").replace(/"/g, '""')}"`;
+      const escape = (v) => '"' + String(v || "").replace(/"/g, '""') + '"';
       return [
         escape(row.transcript_title),
         escape(row.type),
@@ -513,10 +471,7 @@ app.get("/api/export/csv/:projectId", async (req, res) => {
     const csv = header + csvRows.join("\n");
 
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="meeting-export-${safeId}.csv"`
-    );
+    res.setHeader("Content-Disposition", 'attachment; filename="meeting-export-' + safeId + '.csv"');
     res.send(csv);
   } catch (error) {
     console.error(error);
@@ -524,29 +479,25 @@ app.get("/api/export/csv/:projectId", async (req, res) => {
   }
 });
 
-// GET /api/export/pdf/:projectId — export as PDF
 app.get("/api/export/pdf/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
     const safeId = sanitizeFilename(projectId);
     const projectRes = await client.query("SELECT * FROM projects WHERE id = $1", [projectId]);
-    const projectName = projectRes.rows.length > 0 ? projectRes.rows[0].name : `Project ${projectId}`;
+    const projectName = projectRes.rows.length > 0 ? projectRes.rows[0].name : "Project " + projectId;
     const data = await getProjectExportData(projectId);
 
     const doc = new PDFDocument({ margin: 50 });
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="meeting-export-${safeId}.pdf"`
-    );
+    res.setHeader("Content-Disposition", 'attachment; filename="meeting-export-' + safeId + '.pdf"');
     doc.pipe(res);
 
     // Title
-    doc.fontSize(20).font("Helvetica-Bold").text(`Meeting Intelligence Report`, { align: "center" });
-    doc.fontSize(14).font("Helvetica").text(`Project: ${projectName}`, { align: "center" });
+    doc.fontSize(20).font("Helvetica-Bold").text("Meeting Intelligence Report", { align: "center" });
+    doc.fontSize(14).font("Helvetica").text("Project: " + projectName, { align: "center" });
     doc.moveDown();
-    doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`, { align: "center" });
+    doc.fontSize(10).text("Generated: " + new Date().toLocaleString(), { align: "center" });
     doc.moveDown(2);
 
     if (data.length === 0) {
@@ -557,19 +508,25 @@ app.get("/api/export/pdf/:projectId", async (req, res) => {
         if (row.transcript_title !== currentTranscript) {
           currentTranscript = row.transcript_title;
           doc.moveDown();
-          doc.fontSize(14).font("Helvetica-Bold").text(`📄 ${currentTranscript}`);
+          doc.fontSize(14).font("Helvetica-Bold").text("[Transcript] " + currentTranscript);
           doc.moveDown(0.5);
         }
         const isDecision = row.type === "Decision";
         doc.fontSize(11).font("Helvetica-Bold").text(
-          `${isDecision ? "✅ Decision" : "⚡ Action Item"}`,
+          isDecision ? "[DECISION]" : "[ACTION ITEM]",
           { continued: false }
         );
-        doc.fontSize(11).font("Helvetica").text(`   ${row.content}`);
+        doc.fontSize(11).font("Helvetica").text("   " + row.content);
         if (!isDecision) {
-          if (row.assigned_to) doc.fontSize(10).fillColor("gray").text(`   👤 Assigned to: ${row.assigned_to}`);
-          if (row.due_date) doc.fontSize(10).text(`   📅 Due: ${row.due_date}`);
-          if (row.completed === "true") doc.fontSize(10).text(`   ✓ Completed`);
+          if (row.assigned_to) {
+            doc.fontSize(10).fillColor("gray").text("   Assigned to: " + row.assigned_to);
+          }
+          if (row.due_date) {
+            doc.fontSize(10).text("   Due: " + row.due_date);
+          }
+          if (row.completed === "true") {
+            doc.fontSize(10).text("   [Completed]");
+          }
           doc.fillColor("black");
         }
         doc.moveDown(0.5);
@@ -584,7 +541,7 @@ app.get("/api/export/pdf/:projectId", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Legacy meetings routes (kept for backward compatibility)
+// Legacy meetings routes
 // ---------------------------------------------------------------------------
 
 app.get("/api/meetings", async (req, res) => {
@@ -617,5 +574,5 @@ app.get("/api/meetings/:id", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log("Server running on http://localhost:" + PORT);
 });
