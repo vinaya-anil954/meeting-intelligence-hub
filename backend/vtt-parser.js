@@ -32,10 +32,10 @@ function parseVTT(content) {
     if (/^\d+$/.test(trimmed)) continue;
 
     // Extract speaker from "<v Speaker Name>dialogue" pattern (WebVTT voice span)
-    const vTagMatch = trimmed.match(/^<v\s+([^>]+)>(.*)/i);
+    const vTagMatch = trimmed.match(/^<v[ \t]+([^>\s][^>]{0,100})>(.*)/i);
     if (vTagMatch) {
       const speaker = vTagMatch[1].trim();
-      const dialogue = vTagMatch[2].replace(/<[^>]+>/g, '').trim();
+      const dialogue = vTagMatch[2].replace(/<[^>]{0,200}>/g, '').trim();
       speakerSet.add(speaker);
       if (dialogue) textLines.push(dialogue);
       continue;
@@ -52,7 +52,7 @@ function parseVTT(content) {
     }
 
     // Strip any remaining inline VTT tags (<c>, <b>, timestamps, etc.)
-    const cleaned = trimmed.replace(/<[^>]+>/g, '').trim();
+    const cleaned = trimmed.replace(/<[^>]{0,200}>/g, '').trim();
     if (cleaned) textLines.push(cleaned);
   }
 

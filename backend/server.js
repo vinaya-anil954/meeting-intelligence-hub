@@ -4,6 +4,7 @@ const multer = require("multer");
 const path = require("path");
 const { Client } = require("pg");
 const PDFDocument = require("pdfkit");
+const rateLimit = require("express-rate-limit");
 const { extractDecisions, extractActionItems, chatQuery } = require("./ai-service");
 const { parseVTT, parseTXT } = require("./vtt-parser");
 require("dotenv").config();
@@ -14,6 +15,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Rate limiting — apply globally to all /api routes
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+app.use("/api/", apiLimiter);
+
+// Stricter limit for upload and AI-heavy endpoints
+const heavyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
 // Multer — store files in memory for processing
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -97,7 +116,7 @@ app.get("/api/projects/:id", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // POST /api/transcripts/upload — multipart upload of .txt/.vtt files
-app.post("/api/transcripts/upload", upload.array("files"), async (req, res) => {
+app.post("/api/transcripts/upload", heavyLimiter, upload.array("files"), async (req, res) => {
   try {
     const { projectId } = req.body;
     if (!projectId) {
@@ -359,10 +378,10 @@ async function handleChatAsk(req, res) {
 }
 
 // POST /api/chat/ask — ask a question about a project's transcripts
-app.post("/api/chat/ask", handleChatAsk);
+app.post("/api/chat/ask", heavyLimiter, handleChatAsk);
 
 // POST /api/chat — alias for /api/chat/ask (matches App.jsx usage)
-app.post("/api/chat", handleChatAsk);
+app.post("/api/chat", heavyLimiter, handleChatAsk);
 
 // ---------------------------------------------------------------------------
 // Export

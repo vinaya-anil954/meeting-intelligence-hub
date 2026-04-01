@@ -34,7 +34,7 @@ function fallbackExtractActionItems(transcript) {
   const lines = transcript.split(/[.\n]+/);
   const actionKeywords = /\b(will|needs? to|should|must|has to|assigned to|action item|follow up|take care of|responsible for)\b/i;
   const namePattern = /\b([A-Z][a-z]+ [A-Z][a-z]+|[A-Z][a-z]+)\b/g;
-  const datePattern = /\b(by|before|due|deadline)\s+([\w\s,]+?\d{4}|\w+ \d+(?:st|nd|rd|th)?|\d{4}-\d{2}-\d{2})\b/i;
+  const datePattern = /\b(by|before|due|deadline) ([\w,]{1,20} \d{4}|\w{3,10} \d{1,2}(?:st|nd|rd|th)?|\d{4}-\d{2}-\d{2})\b/i;
 
   for (const line of lines) {
     const trimmed = line.trim();
