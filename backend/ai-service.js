@@ -58,8 +58,8 @@ function fallbackExtractActionItems(transcript) {
 async function extractDecisions(transcript) {
   const ai = getOpenAIClient();
   if (!ai) {
-    console.warn('OPENAI_API_KEY not set — using fallback decision extraction');
-    return fallbackExtractDecisions(transcript);
+    console.warn('OPENAI_API_KEY not set — skipping decision extraction');
+    return [];
   }
 
   try {
@@ -89,8 +89,8 @@ async function extractDecisions(transcript) {
 async function extractActionItems(transcript) {
   const ai = getOpenAIClient();
   if (!ai) {
-    console.warn('OPENAI_API_KEY not set — using fallback action item extraction');
-    return fallbackExtractActionItems(transcript);
+    console.warn('OPENAI_API_KEY not set — skipping action item extraction');
+    return [];
   }
 
   try {
@@ -129,9 +129,33 @@ async function chatQuery(question, transcripts) {
   const ai = getOpenAIClient();
 
   if (!ai) {
+    // Keyword-based fallback search when no OpenAI key is configured
+    const keywords = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
+    const sources = [];
+    const matchedExcerpts = [];
+
+    for (const transcript of transcripts) {
+      const lines = transcript.content.split('\n').filter((l) => l.trim());
+      for (const line of lines) {
+        const lower = line.toLowerCase();
+        if (keywords.some((kw) => lower.includes(kw))) {
+          matchedExcerpts.push(line.trim());
+          if (!sources.find((s) => s.transcript_title === transcript.title)) {
+            sources.push({ transcript_title: transcript.title, excerpt: line.trim() });
+          }
+        }
+      }
+    }
+
+    if (matchedExcerpts.length > 0) {
+      return {
+        answer: `Based on the transcripts, here are the relevant sections:\n\n${matchedExcerpts.slice(0, 5).join('\n')}`,
+        sources,
+      };
+    }
+
     return {
-      answer:
-        'AI chat is unavailable — please set OPENAI_API_KEY in your environment.',
+      answer: 'No relevant information found in the transcripts for your question.',
       sources: [],
     };
   }
