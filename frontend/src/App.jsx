@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 import Dashboard from './components/Dashboard';
-import ChatBot from './components/ChatBot';
+import ChatBot from './components/Chatbot';
 import SentimentChart from './components/SentimentChart';
 import { Menu, X, BarChart3, FolderOpen, TrendingUp, MessageCircle, Upload, Download, FileText } from 'lucide-react';
 
