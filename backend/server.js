@@ -319,6 +319,75 @@ app.delete("/api/action-items/:id", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Sentiment Analysis
+// ---------------------------------------------------------------------------
+
+app.get("/api/sentiment/transcript/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const transcriptResult = await client.query(
+      "SELECT content FROM transcripts WHERE id = $1",
+      [id]
+    );
+    if (transcriptResult.rows.length === 0) {
+      return res.status(404).json({ error: "Transcript not found" });
+    }
+
+    const content = transcriptResult.rows[0].content;
+    const lines = content.split("\n").filter((l) => l.trim());
+
+    const positiveWords = [
+      "agree", "great", "good", "excellent", "happy", "love", "perfect",
+      "amazing", "wonderful", "fantastic", "yes", "definitely", "absolutely",
+      "exciting", "awesome", "thank", "thanks", "pleased", "glad", "success",
+      "well done", "brilliant",
+    ];
+    const negativeWords = [
+      "disagree", "bad", "poor", "terrible", "hate", "wrong", "issue",
+      "problem", "concern", "worried", "unfortunately", "fail", "failure",
+      "disappointed", "angry", "frustrat", "difficult", "never", "worst",
+      "awful", "no way", "confused", "delay",
+    ];
+
+    const results = lines.map((line, index) => {
+      const lower = line.toLowerCase();
+      const speakerMatch = line.match(/^([A-Za-z\s]+?):/);
+      const speaker = speakerMatch ? speakerMatch[1].trim() : "Unknown";
+
+      let posCount = 0;
+      let negCount = 0;
+      positiveWords.forEach((w) => { if (lower.includes(w)) posCount++; });
+      negativeWords.forEach((w) => { if (lower.includes(w)) negCount++; });
+
+      let sentiment_label = "neutral";
+      let sentiment_score = 0;
+
+      if (posCount > negCount) {
+        sentiment_label = "positive";
+        sentiment_score = Math.min(posCount * 0.3, 1);
+      } else if (negCount > posCount) {
+        sentiment_label = "negative";
+        sentiment_score = -Math.min(negCount * 0.3, 1);
+      }
+
+      return {
+        id: index + 1,
+        transcript_id: parseInt(id, 10),
+        speaker,
+        text: line,
+        sentiment_label,
+        sentiment_score,
+      };
+    });
+
+    res.json(results);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to analyze sentiment" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------
 
