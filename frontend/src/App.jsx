@@ -3,7 +3,7 @@ import axios from 'axios';
 import './App.css';
 import Dashboard from './components/Dashboard';
 import ChatBot from './components/Chatbot';
-import SentimentChart from './components/SentimentChart';
+import SentimentDashboard from './components/SentimentDashboard';
 import { Menu, X, BarChart3, FolderOpen, TrendingUp, MessageCircle, Upload, Download, FileText } from 'lucide-react';
 
 function App() {
@@ -368,15 +368,7 @@ function App() {
               <TrendingUp className="text-blue-600" size={32} />
               Sentiment Analysis
             </h1>
-            {transcripts.length === 0 ? (
-              <div className="bg-white p-12 rounded-xl shadow-lg text-center">
-                <p className="text-gray-500 text-lg">No transcripts available for sentiment analysis</p>
-              </div>
-            ) : (
-              transcripts.map(t => (
-                <SentimentChart key={t.id} transcriptTitle={t.title} sentiment={t.sentiment_analysis || []} />
-              ))
-            )}
+                        <SentimentDashboard project={selectedProject} API_URL={API_URL} />
           </div>
         )}
 
