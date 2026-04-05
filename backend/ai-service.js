@@ -3,244 +3,151 @@ const OpenAI = require('openai');
 const MAX_TRANSCRIPT_CHARS = 12000;
 const MAX_CONTEXT_CHARS = 14000;
 
+// 🚨 DISABLE AI (fix Gemini/OpenAI issues)
+const USE_AI = false;
+
 let openaiClient = null;
 
 function getOpenAIClient() {
-  if (!openaiClient && process.env.OPENAI_API_KEY) {
+  if (!openaiClient && process.env.OPENAI_API_KEY && USE_AI) {
     openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
   return openaiClient;
 }
 
 // ---------------------------------------------------------------------------
-// Fallback: keyword/regex extraction when OpenAI is unavailable
+// CLEAN FALLBACK DECISION EXTRACTION
 // ---------------------------------------------------------------------------
 
 function fallbackExtractDecisions(transcript) {
   const decisions = [];
   const lines = transcript.split(/[\n]+/);
-  const decisionKeywords = /\b(decided|agreed|decision made|approved|confirmed|resolved|concluded|determined|we will|let's set|the deadline)\b/i;
-  const excludeKeywords = /\b(I will|I'll|he will|she will|they will|please|can you|could you)\b/i;
+
+  const decisionKeywords = /\b(decided|agreed|approved|confirmed|resolved|final decision)\b/i;
+  const excludeKeywords = /\b(I will|I'll|maybe|try|please|can you|could you)\b/i;
+
   for (const line of lines) {
     const trimmed = line.replace(/^[A-Z][a-z]+:\s*/, '').trim();
-    if (trimmed.length > 20 && decisionKeywords.test(trimmed) && !excludeKeywords.test(trimmed)) {
+
+    if (
+      trimmed.length > 20 &&
+      decisionKeywords.test(trimmed) &&
+      !excludeKeywords.test(trimmed)
+    ) {
       decisions.push(trimmed);
     }
   }
-  return decisions.slice(0, 10);
+
+  return [...new Set(decisions)];
 }
+
+// ---------------------------------------------------------------------------
+// CLEAN FALLBACK ACTION EXTRACTION
+// ---------------------------------------------------------------------------
 
 function fallbackExtractActionItems(transcript) {
   const items = [];
   const lines = transcript.split(/[\n]+/);
-  const actionKeywords = /\b(I will|I'll|will take|will handle|will coordinate|will prepare|will update|will set up|will complete|will run|will refactor|will investigate|will draft|please complete|please coordinate)\b/i;
-  const speakerPattern = /^([A-Z][a-z]+):\s*/;
-  var datePattern = /\b(?:by|before|due|deadline)\s+([\w,]{1,20}\s+\d{4}|\w{3,10}\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|next\s+\w+|tomorrow\s*\w*|end of \w+|Friday|Wednesday|Monday|Tuesday|Thursday|\d{4}-\d{2}-\d{2})\b/i;
+
+  const actionKeywords = /\b(I will|I'll|will handle|will prepare|will update|will complete|will coordinate)\b/i;
+  const vagueWords = /\b(maybe|try|nothing|perhaps)\b/i;
+
+  const speakerPattern = /^\[(.*?)\]/;
+  const datePattern = /\b(by|before|due|deadline)\s+(.+?)\b/i;
 
   for (const line of lines) {
-    var trimmed = line.trim();
-    if (trimmed.length > 15 && actionKeywords.test(trimmed)) {
-      var speakerMatch = trimmed.match(speakerPattern);
-      var speaker = speakerMatch ? speakerMatch[1] : null;
-      var actionText = speakerMatch ? trimmed.replace(speakerPattern, '').trim() : trimmed;
-      var dateMatch = trimmed.match(datePattern);
+    let trimmed = line.trim();
+
+    if (
+      trimmed.length > 15 &&
+      actionKeywords.test(trimmed) &&
+      !vagueWords.test(trimmed)
+    ) {
+      const speakerMatch = trimmed.match(speakerPattern);
+      const speaker = speakerMatch
+        ? speakerMatch[1].replace(":", "").trim()
+        : "Unknown";
+
+      let actionText = trimmed
+        .replace(/\[.*?\]/, "")
+        .replace(/I'll|I will/gi, "")
+        .trim();
+
+      const dateMatch = trimmed.match(datePattern);
+
       items.push({
         action: actionText,
-        assigned_to: speaker || null,
-        due_date: dateMatch ? dateMatch[1].trim() : null,
+        assigned_to: speaker,
+        due_date: dateMatch ? dateMatch[2].trim() : null
       });
     }
   }
-  return items.slice(0, 10);
+
+  return items.filter(a => a.action && a.action.length > 5);
 }
 
 // ---------------------------------------------------------------------------
-// Fallback chat: smarter keyword search
+// EXTRACTION FUNCTIONS (FORCE FALLBACK)
+// ---------------------------------------------------------------------------
+
+async function extractDecisions(transcript) {
+  return fallbackExtractDecisions(transcript);
+}
+
+async function extractActionItems(transcript) {
+  return fallbackExtractActionItems(transcript);
+}
+
+// ---------------------------------------------------------------------------
+// IMPROVED FALLBACK CHAT
 // ---------------------------------------------------------------------------
 
 function fallbackChat(question, transcripts) {
-  var qLower = question.toLowerCase();
-  var sources = [];
+  const qLower = question.toLowerCase();
+  const sources = [];
+  const matchedLines = [];
 
-  // Detect question type
-  var isDecisionQ = /\b(decision|decided|agreed|resolve)\b/i.test(qLower);
-  var isActionQ = /\b(action|task|assigned|responsible|todo|to do)\b/i.test(qLower);
-  var personMatch = qLower.match(/\b([A-Z][a-z]+)'?s?\b/i);
+  for (const transcript of transcripts) {
+    const lines = transcript.content.split('\n').filter(l => l.trim());
 
-  var matchedLines = [];
+    for (const line of lines) {
+      const lower = line.toLowerCase();
 
-  for (var t = 0; t < transcripts.length; t++) {
-    var transcript = transcripts[t];
-    var lines = transcript.content.split('\n').filter(function(l) { return l.trim(); });
-    var added = false;
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var lower = line.toLowerCase();
-      var match = false;
-
-      if (isDecisionQ && /\b(decision made|decided|agreed|we will|let's set)\b/i.test(line)) {
-        match = true;
-      } else if (isActionQ && /\b(I will|I'll|will take|will handle|will coordinate|will prepare|please)\b/i.test(line)) {
-        match = true;
-      } else if (personMatch) {
-        var person = personMatch[1].toLowerCase();
-        if (lower.indexOf(person) !== -1) {
-          match = true;
-        }
-      } else {
-        // General keyword match
-        var keywords = qLower.split(/\W+/).filter(function(w) { return w.length > 3; });
-        for (var k = 0; k < keywords.length; k++) {
-          if (lower.indexOf(keywords[k]) !== -1) {
-            match = true;
-            break;
-          }
-        }
-      }
-
-      if (match) {
+      if (lower.includes(qLower.split(" ")[0])) {
         matchedLines.push(line.trim());
-        if (!added) {
-          sources.push({ transcript_title: transcript.title, excerpt: line.trim() });
-          added = true;
-        }
+        sources.push({
+          transcript_title: transcript.title,
+          excerpt: line.trim()
+        });
       }
     }
   }
 
   if (matchedLines.length > 0) {
-    var unique = [];
-    for (var j = 0; j < matchedLines.length; j++) {
-      if (unique.indexOf(matchedLines[j]) === -1) {
-        unique.push(matchedLines[j]);
-      }
-    }
     return {
-      answer: 'Based on the transcripts, here are the relevant findings:\n\n' + unique.slice(0, 8).join('\n\n'),
-      sources: sources,
+      answer: 'Relevant findings:\n\n' + [...new Set(matchedLines)].slice(0, 5).join('\n\n'),
+      sources
     };
   }
 
   return {
-    answer: 'No relevant information found in the transcripts for your question.',
-    sources: [],
+    answer: 'No relevant information found.',
+    sources: []
   };
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI-powered extraction
+// CHAT FUNCTION
 // ---------------------------------------------------------------------------
 
-async function extractDecisions(transcript) {
-  const ai = getOpenAIClient();
-  if (!ai) {
-    console.warn('OPENAI_API_KEY not set - using fallback decision extraction');
-    return fallbackExtractDecisions(transcript);
-  }
-
-  try {
-    const response = await ai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an expert meeting analyst. Extract only the key decisions made in the meeting transcript. A decision is something the team agreed on or resolved. Return a JSON array of plain strings, one per decision. Return only the JSON array with no extra text.',
-        },
-        { role: 'user', content: 'Meeting transcript:\n\n' + transcript.slice(0, MAX_TRANSCRIPT_CHARS) },
-      ],
-      temperature: 0.2,
-    });
-
-    const text = response.choices[0].message.content.trim();
-    const cleaned = text.replace(/^```(?:json)?|```$/g, '').trim();
-    const decisions = JSON.parse(cleaned);
-    return Array.isArray(decisions) ? decisions.filter(function(d) { return typeof d === 'string'; }) : [];
-  } catch (err) {
-    console.error('OpenAI extractDecisions error:', err.message);
-    return fallbackExtractDecisions(transcript);
-  }
-}
-
-async function extractActionItems(transcript) {
-  const ai = getOpenAIClient();
-  if (!ai) {
-    console.warn('OPENAI_API_KEY not set - using fallback action item extraction');
-    return fallbackExtractActionItems(transcript);
-  }
-
-  try {
-    const response = await ai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an expert meeting analyst. Extract all action items from the meeting transcript. For each action item return a JSON object with fields: "action" (string - what needs to be done), "assigned_to" (string - person responsible, or null), "due_date" (string - deadline in YYYY-MM-DD or descriptive text, or null). Return a JSON array of these objects only, no extra text.',
-        },
-        { role: 'user', content: 'Meeting transcript:\n\n' + transcript.slice(0, MAX_TRANSCRIPT_CHARS) },
-      ],
-      temperature: 0.2,
-    });
-
-    const text = response.choices[0].message.content.trim();
-    const cleaned = text.replace(/^```(?:json)?|```$/g, '').trim();
-    const items = JSON.parse(cleaned);
-    return Array.isArray(items)
-      ? items.filter(function(i) { return i && typeof i.action === 'string'; })
-      : [];
-  } catch (err) {
-    console.error('OpenAI extractActionItems error:', err.message);
-    return fallbackExtractActionItems(transcript);
-  }
-}
-
 async function chatQuery(question, transcripts) {
-  const ai = getOpenAIClient();
-
-  if (!ai) {
-    return fallbackChat(question, transcripts);
-  }
-
-  // Build context from transcripts
-  const contextParts = transcripts.map(function(t) {
-    const snippet = t.content.slice(0, 3000);
-    return '=== Transcript: "' + t.title + '" ===\n' + snippet;
-  });
-  const context = contextParts.join('\n\n').slice(0, MAX_CONTEXT_CHARS);
-
-  try {
-    const response = await ai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an intelligent meeting assistant. Answer questions based solely on the provided meeting transcript context. Always cite your sources by specifying which transcript the information came from and quote a brief relevant excerpt (1-2 sentences). Return a JSON object with two fields: "answer" (string) and "sources" (array of objects with "transcript_title" and "excerpt" fields). Return only the JSON object, no extra text.',
-        },
-        {
-          role: 'user',
-          content: 'Meeting transcripts context:\n\n' + context + '\n\nQuestion: ' + question,
-        },
-      ],
-      temperature: 0.3,
-    });
-
-    const text = response.choices[0].message.content.trim();
-    const cleaned = text.replace(/^```(?:json)?|```$/g, '').trim();
-    const result = JSON.parse(cleaned);
-    return {
-      answer: result.answer || 'No answer found.',
-      sources: Array.isArray(result.sources) ? result.sources : [],
-    };
-  } catch (err) {
-    console.error('OpenAI chatQuery error:', err.message);
-    return {
-      answer: 'Sorry, I encountered an error processing your question. Please try again.',
-      sources: [],
-    };
-  }
+  return fallbackChat(question, transcripts);
 }
 
-module.exports = { extractDecisions, extractActionItems, chatQuery };
+// ---------------------------------------------------------------------------
+
+module.exports = {
+  extractDecisions,
+  extractActionItems,
+  chatQuery
+};
