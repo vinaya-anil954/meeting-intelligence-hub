@@ -1,102 +1,95 @@
-import React from 'react';
-import { BarChart3, TrendingUp, CheckSquare, Zap } from 'lucide-react';
+import { LayoutDashboard, FileText, CheckCircle, Zap, Plus, ArrowRight } from 'lucide-react';
 
-export default function Dashboard({ projects, stats }) {
-  const statCards = [
-    {
-      title: 'Total Projects',
-      value: projects.length,
-      icon: BarChart3,
-      color: 'from-blue-500 to-blue-600',
-      bgColor: 'bg-blue-50'
-    },
-    {
-      title: 'Total Transcripts',
-      value: stats.transcriptCount || 0,
-      icon: TrendingUp,
-      color: 'from-green-500 to-green-600',
-      bgColor: 'bg-green-50'
-    },
-    {
-      title: 'Decisions Made',
-      value: stats.decisionCount || 0,
-      icon: CheckSquare,
-      color: 'from-purple-500 to-purple-600',
-      bgColor: 'bg-purple-50'
-    },
-    {
-      title: 'Action Items',
-      value: stats.actionCount || 0,
-      icon: Zap,
-      color: 'from-orange-500 to-orange-600',
-      bgColor: 'bg-orange-50'
-    }
+export default function Dashboard({ projects, stats, onSelectProject, onNewProject }) {
+  const cards = [
+    { label: 'Projects', value: projects.length, icon: '📁', color: '#6c63ff', bg: '#eeeeff' },
+    { label: 'Transcripts', value: stats.transcriptCount || 0, icon: '📄', color: '#0891b2', bg: '#ecfeff' },
+    { label: 'Decisions', value: stats.decisionCount || 0, icon: '✅', color: '#16a34a', bg: '#dcfce7' },
+    { label: 'Action Items', value: stats.actionCount || 0, icon: '⚡', color: '#d97706', bg: '#fef3c7' },
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 flex items-center gap-3">
-          <BarChart3 className="text-blue-600" size={40} />
-          Dashboard
+    <div>
+      {/* Hero */}
+      <div className="animate-fade-up" style={{ marginBottom: 32 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent-soft)', borderRadius: 99, padding: '4px 14px', marginBottom: 16 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>MEETING INTELLIGENCE HUB</span>
+        </div>
+        <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 36, lineHeight: 1.1, marginBottom: 8 }}>
+          Stop re-reading.<br />
+          <span style={{ color: 'var(--accent)' }}>Start executing.</span>
         </h1>
-        <p className="text-gray-600 mt-2">Overview of your meeting intelligence</p>
+        <p style={{ color: 'var(--ink-muted)', fontSize: 15, maxWidth: 480 }}>
+          Upload meeting transcripts and let AI extract decisions, action items, and answer your questions instantly.
+        </p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={idx}
-              className={`bg-gradient-to-br ${stat.color} text-white p-8 rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:scale-105`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium opacity-90">{stat.title}</p>
-                  <p className="text-4xl font-bold mt-3">{stat.value}</p>
-                </div>
-                <Icon size={32} className="opacity-80" />
-              </div>
-              <div className="mt-4 h-1 bg-white opacity-30 rounded-full"></div>
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
+        {cards.map((c, i) => (
+          <div key={i} className={`stat-card animate-fade-up stagger-${i+1}`}>
+            <div className="stat-icon" style={{ background: c.bg }}>
+              <span style={{ fontSize: 20 }}>{c.icon}</span>
             </div>
-          );
-        })}
+            <div className="stat-value">{c.value}</div>
+            <div className="stat-label">{c.label}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Projects Preview */}
-      {projects.length > 0 && (
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent Projects</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.slice(0, 3).map(project => (
-              <div
-                key={project.id}
-                className="bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition-all border-l-4 border-blue-600"
-              >
-                <h3 className="text-xl font-bold text-gray-800">{project.name}</h3>
-                <p className="text-gray-600 mt-2 line-clamp-2">{project.description || 'No description'}</p>
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <span className="text-sm text-gray-500">
-                    📅 {new Date(project.created_at).toLocaleDateString()}
-                  </span>
+      {/* Projects */}
+      <div className="card animate-fade-up" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <h2 style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18 }}>Your Projects</h2>
+          <button onClick={onNewProject} className="btn btn-primary btn-sm">
+            <Plus size={14} /> New Project
+          </button>
+        </div>
+        {projects.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🗂️</div>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>No projects yet</div>
+            <p style={{ color: 'var(--ink-muted)', fontSize: 14, marginBottom: 20 }}>Create a project to start uploading and analysing meeting transcripts</p>
+            <button onClick={onNewProject} className="btn btn-primary">Create your first project</button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+            {projects.map(p => (
+              <div key={p.id} onClick={() => onSelectProject(p)}
+                style={{ padding: '16px 20px', border: '1px solid var(--border)', borderRadius: 12, cursor: 'pointer', transition: 'all 0.15s', background: 'var(--surface-2)' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.background='var(--accent-soft)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface-2)'; }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{p.name}</div>
+                  <ArrowRight size={16} style={{ color: 'var(--ink-muted)', flexShrink: 0 }} />
                 </div>
+                <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 8 }}>{p.description || 'No description'}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{new Date(p.created_at).toLocaleDateString()}</div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Empty State */}
-      {projects.length === 0 && (
-        <div className="bg-white rounded-xl shadow-md p-12 text-center">
-          <div className="text-5xl mb-4">📦</div>
-          <p className="text-gray-600 text-lg font-medium">No projects yet</p>
-          <p className="text-gray-500 mt-2">Create your first project to get started!</p>
+      {/* How it works */}
+      <div className="card animate-fade-up">
+        <h2 style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18, marginBottom: 20 }}>How it works</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 16 }}>
+          {[
+            { step: '01', icon: '📤', title: 'Upload transcripts', desc: 'Drag & drop .txt or .vtt files from your meetings' },
+            { step: '02', icon: '🤖', title: 'AI extracts insights', desc: 'Decisions and action items are automatically identified' },
+            { step: '03', icon: '💬', title: 'Ask questions', desc: 'Chat with your transcripts to find any information instantly' },
+            { step: '04', icon: '📊', title: 'Analyse sentiment', desc: 'See the tone and mood of each meeting at a glance' },
+          ].map((item, i) => (
+            <div key={i} style={{ padding: '16px', background: 'var(--surface-2)', borderRadius: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.05em', marginBottom: 8 }}>{item.step}</div>
+              <div style={{ fontSize: 22, marginBottom: 8 }}>{item.icon}</div>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{item.title}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.5 }}>{item.desc}</div>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }

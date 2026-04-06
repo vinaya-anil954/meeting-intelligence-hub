@@ -1,241 +1,203 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import TranscriptUpload from './TranscriptUpload';
-import { Trash2, CheckCircle2, Circle, Download, FileText } from 'lucide-react';
+import { Trash2, CheckCircle2, Circle, Download, FileText, Calendar, Users, Hash } from 'lucide-react';
 
 export default function ProjectView({ project, API_URL }) {
   const [transcripts, setTranscripts] = useState([]);
-  const [selectedTranscript, setSelectedTranscript] = useState(null);
+  const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
-  useEffect(() => {
-    fetchTranscripts();
-  }, [project]);
+  useEffect(() => { fetchTranscripts(); }, [project.id]);
 
   const fetchTranscripts = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const response = await axios.get(`${API_URL}/transcripts/project/${project.id}`);
-      setTranscripts(response.data);
-    } catch (error) {
-      console.error('Error fetching transcripts:', error);
-    } finally {
-      setLoading(false);
-    }
+      const r = await axios.get(`${API_URL}/transcripts/project/${project.id}`);
+      setTranscripts(r.data);
+      if (r.data.length > 0 && !selected) loadTranscript(r.data[0]);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  const handleSelectTranscript = async (transcript) => {
+  const loadTranscript = async (t) => {
+    setLoadingDetail(true);
     try {
-      setLoading(true);
-      const response = await axios.get(`${API_URL}/transcripts/${transcript.id}`); 
-      setSelectedTranscript(response.data);
-    } catch (error) {
-      console.error('Error fetching transcript details:', error);
-    } finally {
-      setLoading(false);
-    }
+      const r = await axios.get(`${API_URL}/transcripts/${t.id}`);
+      setSelected(r.data);
+    } catch (e) { console.error(e); }
+    finally { setLoadingDetail(false); }
   };
 
-  const handleDeleteTranscript = async (transcriptId) => {
-    if (!window.confirm('Delete this transcript?')) return;
+  const deleteTranscript = async (id, e) => {
+    e.stopPropagation();
+    if (!confirm('Delete this transcript?')) return;
     try {
-      await axios.delete(`${API_URL}/transcripts/${transcriptId}`);
-      setTranscripts(transcripts.filter(t => t.id !== transcriptId));
-      setSelectedTranscript(null);
-    } catch (error) {
-      console.error('Error deleting transcript:', error);
-    }
+      await axios.delete(`${API_URL}/transcripts/${id}`);
+      const updated = transcripts.filter(t => t.id !== id);
+      setTranscripts(updated);
+      if (selected?.transcript?.id === id) {
+        setSelected(null);
+        if (updated.length) loadTranscript(updated[0]);
+      }
+    } catch (e) { alert('Delete failed'); }
   };
 
-  const handleToggleActionItem = async (itemId, currentStatus) => {
+  const toggleAction = async (item) => {
     try {
-      await axios.patch(`${API_URL}/action-items/${itemId}`, { completed: !currentStatus });
-      if (selectedTranscript) await handleSelectTranscript(selectedTranscript.transcript);
-    } catch (error) {
-      console.error('Error updating action item:', error);
-    }
+      await axios.patch(`${API_URL}/action-items/${item.id}`, { completed: !item.completed });
+      if (selected) {
+        setSelected(prev => ({
+          ...prev,
+          action_items: prev.action_items.map(a => a.id === item.id ? { ...a, completed: !a.completed } : a)
+        }));
+      }
+    } catch (e) { console.error(e); }
   };
 
-  const handleDeleteActionItem = async (itemId) => {
-    if (!window.confirm('Delete this action item?')) return;
+  const deleteAction = async (id) => {
+    if (!confirm('Delete this action item?')) return;
     try {
-      await axios.delete(`${API_URL}/action-items/${itemId}`);
-      if (selectedTranscript) await handleSelectTranscript(selectedTranscript.transcript);
-    } catch (error) {
-      console.error('Error deleting action item:', error);
-    }
+      await axios.delete(`${API_URL}/action-items/${id}`);
+      setSelected(prev => ({ ...prev, action_items: prev.action_items.filter(a => a.id !== id) }));
+    } catch (e) { alert('Delete failed'); }
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-4xl font-bold text-gray-900 flex items-center gap-3">
-          <FileText className="text-blue-600" size={36} />
-          {project.name}
-        </h2>
-        <div className="text-sm text-gray-600">
-          <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-medium">
-            {transcripts.length} Transcripts
-          </span>
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 28, marginBottom: 4 }}>{project.name}</h1>
+          {project.description && <p style={{ color: 'var(--ink-muted)', fontSize: 14 }}>{project.description}</p>}
         </div>
+        <span className="badge badge-accent">{transcripts.length} transcript{transcripts.length !== 1 ? 's' : ''}</span>
       </div>
 
       <TranscriptUpload projectId={project.id} API_URL={API_URL} onUploadSuccess={fetchTranscripts} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-xl shadow-lg p-6 sticky top-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText size={24} className="text-blue-600" />
-              Transcripts
-            </h3>
-            {loading && transcripts.length === 0 ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : transcripts.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="mx-auto text-gray-300 mb-2" size={32} />
-                <p className="text-gray-500 font-medium">No transcripts yet</p>
-              </div>
+      <div style={{ display: 'grid', gridTemplateColumns: transcripts.length ? '260px 1fr' : '1fr', gap: 20, marginTop: 20 }}>
+        {/* Transcript list */}
+        {transcripts.length > 0 && (
+          <div className="card" style={{ padding: 16, alignSelf: 'start', position: 'sticky', top: 80 }}>
+            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FileText size={16} style={{ color: 'var(--accent)' }} /> Transcripts
+            </div>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--ink-muted)', fontSize: 14 }}>Loading…</div>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {transcripts.map((transcript) => (
-                  <div
-                    key={transcript.id}
-                    onClick={() => handleSelectTranscript(transcript)}
-                    className={`p-4 rounded-lg cursor-pointer transition-all transform hover:scale-105 ${
-                      selectedTranscript?.transcript?.id === transcript.id
-                        ? 'bg-blue-600 text-white shadow-lg border-2 border-blue-700'
-                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
-                    }`}
-                  >
-                    <div className="font-semibold truncate">{transcript.title}</div>
-                    <div className={`text-xs mt-1 ${selectedTranscript?.transcript?.id === transcript.id ? 'text-blue-100' : 'text-gray-600'}`}>
-                      📅 {new Date(transcript.created_at).toLocaleDateString()}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 420, overflowY: 'auto' }}>
+                {transcripts.map(t => {
+                  const isActive = selected?.transcript?.id === t.id;
+                  return (
+                    <div key={t.id} onClick={() => loadTranscript(t)}
+                      style={{ padding: '10px 12px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${isActive ? 'var(--accent)' : 'transparent'}`, background: isActive ? 'var(--accent-soft)' : 'var(--surface-2)', transition: 'all 0.15s' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</div>
+                        <button onClick={(e) => deleteTranscript(t.id, e)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', padding: 2, flexShrink: 0 }}
+                          onMouseEnter={e => e.currentTarget.style.color='var(--red)'}
+                          onMouseLeave={e => e.currentTarget.style.color='var(--ink-muted)'}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Hash size={10} /> {t.word_count?.toLocaleString()} words
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Users size={10} /> {t.speaker_count} speakers
+                        </span>
+                      </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTranscript(transcript.id);
-                      }}
-                      className={`text-xs mt-2 flex items-center gap-1 transition ${
-                        selectedTranscript?.transcript?.id === transcript.id
-                          ? 'text-blue-100 hover:text-white'
-                          : 'text-red-600 hover:text-red-800'
-                      }`}
-                    >
-                      <Trash2 size={14} /> Delete
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-        </div>
+        )}
 
-        {selectedTranscript && (
-          <div className="lg:col-span-2 space-y-6">
-            <div className="flex gap-3">
-              <button
-                onClick={() => window.open(`${API_URL}/export/csv/${selectedTranscript.transcript.id}`, '_blank')}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all shadow-md hover:shadow-lg"
-              >
-                <Download size={20} />
-                Export CSV
-              </button>
-              <button
-                onClick={() => window.open(`${API_URL}/export/pdf/${selectedTranscript.transcript.id}`, '_blank')}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-all shadow-md hover:shadow-lg"
-              >
-                <Download size={20} />
-                Export PDF
-              </button>
+        {/* Detail panel */}
+        {loadingDetail ? (
+          <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
+            <div style={{ color: 'var(--ink-muted)', fontSize: 14 }}>Loading transcript…</div>
+          </div>
+        ) : selected ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Export bar */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <a href={`${API_URL}/export/csv/${selected.transcript.id}`} target="_blank" rel="noreferrer" className="btn btn-success btn-sm">
+                <Download size={14} /> Export CSV
+              </a>
+              <a href={`${API_URL}/export/pdf/${selected.transcript.id}`} target="_blank" rel="noreferrer" className="btn btn-danger btn-sm">
+                <Download size={14} /> Export PDF
+              </a>
+              <div style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Calendar size={13} /> {new Date(selected.transcript.created_at).toLocaleDateString()}
+              </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-8 border-t-4 border-green-600">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <CheckCircle2 className="text-green-600" size={28} />
-                Decisions ({selectedTranscript.decisions.length})
-              </h3>
-              {selectedTranscript.decisions.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="font-medium">No decisions extracted yet</p>
+            {/* Decisions */}
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--green-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
+                </div>
+                <h3 style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 17 }}>Decisions</h3>
+                <span className="badge badge-green" style={{ marginLeft: 'auto' }}>{selected.decisions.length}</span>
+              </div>
+              {selected.decisions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--ink-muted)', fontSize: 14 }}>
+                  No decisions were extracted from this transcript.
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {selectedTranscript.decisions.map((decision) => (
-                    <div
-                      key={decision.id}
-                      className="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-600 p-5 rounded-lg hover:shadow-md transition-all"
-                    >
-                      <div className="flex gap-3">
-                        <CheckCircle2 className="text-green-600 flex-shrink-0 mt-1" size={24} />
-                        <p className="text-gray-800 text-base font-medium">{decision.decision}</p>
-                      </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {selected.decisions.map(d => (
+                    <div key={d.id} className="decision-chip animate-slide-in">
+                      <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.5 }}>{d.decision}</div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-8 border-t-4 border-orange-600">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                ⚡ Action Items ({selectedTranscript.action_items.length})
-              </h3>
-              {selectedTranscript.action_items.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="font-medium">No action items extracted yet</p>
-                </div>
+            {/* Action Items */}
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--amber-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div>
+                <h3 style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 17 }}>Action Items</h3>
+                <span className="badge badge-amber" style={{ marginLeft: 'auto' }}>{selected.action_items.length}</span>
+              </div>
+              {selected.action_items.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 24, color: 'var(--ink-muted)', fontSize: 14 }}>No action items extracted.</div>
               ) : (
-                <div className="space-y-4">
-                  {selectedTranscript.action_items.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`border-l-4 p-5 rounded-lg transition-all ${
-                        item.completed
-                          ? 'bg-gray-100 border-gray-400 opacity-75'
-                          : 'bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-500 hover:shadow-md'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex-1">
-                          <div className={`font-semibold text-lg ${item.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {selected.action_items.map(item => (
+                    <div key={item.id} className={`action-chip animate-slide-in ${item.completed ? 'done' : ''}`}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', textDecoration: item.completed ? 'line-through' : 'none', lineHeight: 1.5 }}>
                             {item.action}
                           </div>
-                          <div className={`text-sm mt-2 flex items-center gap-2 ${item.completed ? 'text-gray-500' : 'text-gray-700'}`}>
-                            👤 <span className="font-medium">{item.assigned_to}</span>
-                          </div>
-                          {item.due_date && (
-                            <div className={`text-sm mt-1 ${item.completed ? 'text-gray-500' : 'text-gray-600'}`}>
-                              📅 Due: {new Date(item.due_date).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                          <button
-                            onClick={() => handleToggleActionItem(item.id, item.completed)}
-                            className={`flex items-center gap-1 font-bold py-2 px-4 rounded-lg transition-all ${
-                              item.completed
-                                ? 'bg-gray-400 hover:bg-gray-500 text-white'
-                                : 'bg-green-600 hover:bg-green-700 text-white'
-                            }`}
-                          >
-                            {item.completed ? (
-                              <>
-                                <Circle size={18} /> Undo
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle2 size={18} /> Done
-                              </>
+                          <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+                            {item.assigned_to && (
+                              <span style={{ fontSize: 12, color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                👤 {item.assigned_to}
+                              </span>
                             )}
+                            {item.due_date && (
+                              <span style={{ fontSize: 12, color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                📅 {item.due_date}
+                              </span>
+                            )}
+                            {item.completed && <span className="badge badge-green" style={{ fontSize: 11 }}>Done</span>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => toggleAction(item)} className={`btn btn-sm ${item.completed ? 'btn-secondary' : 'btn-success'}`}>
+                            {item.completed ? <><Circle size={13} /> Undo</> : <><CheckCircle2 size={13} /> Done</>}
                           </button>
-                          <button
-                            onClick={() => handleDeleteActionItem(item.id)}
-                            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-all flex items-center gap-1"
-                          >
-                            <Trash2 size={18} />
+                          <button onClick={() => deleteAction(item.id)} className="btn btn-danger btn-sm">
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
@@ -245,7 +207,11 @@ export default function ProjectView({ project, API_URL }) {
               )}
             </div>
           </div>
-        )}
+        ) : transcripts.length > 0 ? (
+          <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
+            <div style={{ color: 'var(--ink-muted)', fontSize: 14 }}>Select a transcript to view details</div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

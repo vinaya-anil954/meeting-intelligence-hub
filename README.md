@@ -1,111 +1,91 @@
 # 🎤 Meeting Intelligence Hub
 
-Transform raw meeting transcripts into structured intelligence — automatically surfacing decisions, action items, and answers to questions, so teams can stop re-reading and start executing.
+Transform raw meeting transcripts into structured intelligence — automatically surfacing decisions, action items, and answers to questions.
 
 ## Features
 
-### Feature 1 — Decision & Action Item Extractor
-- Upload `.txt` and `.vtt` meeting transcript files via a drag-and-drop portal
-- AI-powered extraction of **Decisions** (things the team agreed on) and **Action Items** (tasks with who, what, and by when)
-- Clean table view of extracted data
-- Export all decisions and action items as **CSV** or **PDF**
+- **Feature 1 — Decision & Action Item Extractor**: Upload .txt or .vtt transcripts; AI extracts decisions and action items with assignee and due date
+- **Feature 2 — Contextual Query Chatbot**: Ask natural language questions across all transcripts; answers are cited with source
+- **Feature 3 — Sentiment Analysis**: Per-speaker and per-line sentiment dashboard with visual indicators
+- **Dashboard**: Overview of all projects, transcripts, decisions, and action items
 
-### Feature 2 — Contextual Query Chatbot
-- Ask natural language questions across all uploaded transcripts
-- AI answers with **source citations** — which meeting and which part of the transcript
-- Handles cross-meeting and speaker-specific questions
-- Persistent chat history per project
+## Prerequisites
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React 19 + Vite + Tailwind CSS |
-| Backend | Node.js + Express 5 |
-| Database | PostgreSQL |
-| AI | OpenAI API (`gpt-4o-mini`) with keyword-regex fallback |
-| File Parsing | Custom VTT/TXT parser |
-| Export | CSV (built-in) + PDF (PDFKit) |
+- Node.js 18+
+- PostgreSQL database
+- OpenAI API key (optional — keyword fallback works without it)
 
 ## Setup
 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 14+
+### 1. Database
 
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/vinaya-anil954/meeting-intelligence-hub.git
-cd meeting-intelligence-hub
-
-# Install backend dependencies
-cd backend && npm install
-
-# Install frontend dependencies
-cd ../frontend && npm install
+```sql
+-- Create a database
+CREATE DATABASE meeting_hub;
 ```
 
-### 2. Configure Environment
+### 2. Backend
 
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env and set your DATABASE_URL and optionally OPENAI_API_KEY
+# Edit .env with your DATABASE_URL and OPENAI_API_KEY
+npm install
+node init-db.js        # creates all tables
+npm start              # runs on http://localhost:5000
 ```
 
-**.env variables:**
-
-| Variable | Description | Required |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string | ✅ Yes |
-| `OPENAI_API_KEY` | OpenAI API key for AI features | Optional (fallback mode used if not set) |
-| `PORT` | Backend port (default: `5000`) | No |
-
-### 3. Initialize the Database
+### 3. Frontend
 
 ```bash
-cd backend
-node init-db.js
+cd frontend
+npm install
+npm run dev            # runs on http://localhost:3000
 ```
 
-### 4. Run the Application
+Open **http://localhost:3000** in your browser.
 
-**Backend** (in `backend/`):
-```bash
-npm run dev    # development with nodemon
-# or
-npm start      # production
+## Project Structure
+
+```
+meeting-intelligence-hub/
+├── backend/
+│   ├── server.js        # Express API (all routes)
+│   ├── ai-service.js    # OpenAI + fallback extraction
+│   ├── vtt-parser.js    # .vtt and .txt transcript parsers
+│   ├── init-db.js       # Database schema creation
+│   ├── .env.example     # Environment variable template
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx                      # Root layout + routing
+│   │   └── components/
+│   │       ├── Dashboard.jsx            # Home page
+│   │       ├── ProjectView.jsx          # Transcript viewer + extractor
+│   │       ├── TranscriptUpload.jsx     # Drag-and-drop uploader
+│   │       ├── Chatbot.jsx              # AI chat interface
+│   │       └── SentimentDashboard.jsx   # Sentiment analysis
+│   └── package.json
+└── README.md
 ```
 
-**Frontend** (in `frontend/`):
-```bash
-npm run dev
-```
+## Environment Variables
 
-The frontend will be available at `http://localhost:5173` and will proxy API calls to `http://localhost:5000`.
-
-## API Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/projects` | List all projects |
-| `POST` | `/api/projects` | Create a project |
-| `GET` | `/api/projects/:id` | Get a project |
-| `POST` | `/api/transcripts/upload` | Upload transcript files (multipart) |
-| `GET` | `/api/transcripts/project/:projectId` | List transcripts for a project |
-| `GET` | `/api/transcripts/:id` | Get transcript with decisions & action items |
-| `DELETE` | `/api/transcripts/:id` | Delete a transcript |
-| `PATCH` | `/api/action-items/:id` | Update an action item |
-| `DELETE` | `/api/action-items/:id` | Delete an action item |
-| `GET` | `/api/chat/history/:projectId` | Get chat history for a project |
-| `POST` | `/api/chat/ask` | Ask a question about a project's transcripts |
-| `GET` | `/api/export/csv/:projectId` | Download CSV export |
-| `GET` | `/api/export/pdf/:projectId` | Download PDF export |
-
-## Supported File Formats
-
-| Format | Description |
+| Variable | Description |
 |---|---|
-| `.txt` | Plain text transcript |
-| `.vtt` | WebVTT subtitle/caption file — timestamps and headers are stripped automatically |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `OPENAI_API_KEY` | OpenAI key (optional — fallback is used if absent) |
+| `PORT` | Backend port (default: 5000) |
+
+## Bug Fixes Applied
+
+1. `processTranscript` → replaced with correct `extractDecisions` + `extractActionItems` calls (both `await`ed)
+2. `chatQuery` added to import — was missing, causing `ReferenceError` crash on every chat message
+3. `pg.Client` → `pg.Pool` for connection resilience
+4. Frontend `API_URL` hardcode removed — uses Vite proxy (`/api`) in dev, `VITE_API_URL` env var in prod
+5. `Chatbot.jsx` no longer ignores `API_URL` prop — fixed to use passed value
+6. VTT parser now preserves `Speaker: dialogue` format so speaker queries work in chatbot
+7. React `key={idx}` → `key={msg.id}` in chat history
+8. Dead root `server.js` removed
+9. `init-db.js` updated to use `Pool`
+10. `.env.example` added for easy setup
