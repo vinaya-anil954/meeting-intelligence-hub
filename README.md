@@ -60,7 +60,7 @@ AI (Groq API)
 ### 1. Clone repo
 
 ```
-git clone https://github.com/YOUR_USERNAME/meeting-intelligence-hub.git
+git clone https://github.com/vinaya-anil954/meeting-intelligence-hub.git
 cd meeting-intelligence-hub
 ```
 
