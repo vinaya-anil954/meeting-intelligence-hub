@@ -7,7 +7,9 @@ import ChatBot from './components/Chatbot';
 import { LayoutDashboard, FolderOpen, TrendingUp, MessageCircle, Plus, Trash2, X, Menu } from 'lucide-react';
 
 // Use relative URL (proxied by Vite in dev, same origin in prod)
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = import.meta.env.VITE_API_URL 
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
 
 export default function App() {
   const [tab, setTab] = useState('dashboard');
