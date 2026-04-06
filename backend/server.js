@@ -238,37 +238,96 @@ app.get("/api/export/csv/:transcriptId", async (req, res) => {
 app.get("/api/export/pdf/:transcriptId", async (req, res) => {
   try {
     const id = req.params.transcriptId;
-    const tr = await pool.query("SELECT title FROM transcripts WHERE id=$1", [id]);
-    const title = tr.rows[0]?.title || "Transcript";
-    const decisions = await pool.query("SELECT decision FROM decisions WHERE transcript_id=$1", [id]);
-    const actions = await pool.query("SELECT action,assigned_to,due_date,completed FROM action_items WHERE transcript_id=$1", [id]);
-    const doc = new PDFDocument({ margin: 50 });
-    res.setHeader("Content-Type","application/pdf");
-    res.setHeader("Content-Disposition",'attachment; filename="export-'+sanitize(id)+'.pdf"');
+    const tr = await pool.query("SELECT title,word_count,speaker_count FROM transcripts WHERE id=$1", [id]);
+    const info = tr.rows[0] || {};
+    const title = info.title || "Transcript";
+    const decisions = await pool.query("SELECT decision FROM decisions WHERE transcript_id=$1 ORDER BY created_at ASC", [id]);
+    const actions = await pool.query("SELECT action,assigned_to,due_date,completed FROM action_items WHERE transcript_id=$1 ORDER BY created_at ASC", [id]);
+
+    const doc = new PDFDocument({ margin: 0, size: "A4" });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + sanitize(title) + '-report.pdf"');
     doc.pipe(res);
-    doc.fontSize(20).font("Helvetica-Bold").text("Meeting Intelligence Report", { align:"center" });
-    doc.fontSize(14).font("Helvetica").text("Transcript: "+title, { align:"center" });
-    doc.fontSize(10).text("Generated: "+new Date().toLocaleString(), { align:"center" });
-    doc.moveDown(2);
-    if (decisions.rows.length) {
-      doc.fontSize(14).font("Helvetica-Bold").text("DECISIONS");
-      doc.moveDown(0.5);
-      decisions.rows.forEach(r => { doc.fontSize(11).font("Helvetica").text("• "+r.decision); doc.moveDown(0.3); });
+
+    const W = 595, M = 50;
+
+    // Header banner
+    doc.rect(0, 0, W, 100).fill("#6c63ff");
+    doc.fontSize(20).font("Helvetica-Bold").fillColor("white").text("Meeting Intelligence Report", M, 22, { width: W - M * 2 });
+    doc.fontSize(12).font("Helvetica").fillColor("white").text(title, M, 50, { width: W - M * 2 });
+    doc.fontSize(9).fillColor("white").text("Generated: " + new Date().toLocaleString(), M, 72);
+
+    let y = 118;
+
+    // Stats row
+    const stats = [
+      { label: "Decisions", value: decisions.rows.length, color: "#16a34a" },
+      { label: "Action Items", value: actions.rows.length, color: "#d97706" },
+      { label: "Words", value: (info.word_count || 0).toLocaleString(), color: "#0891b2" },
+      { label: "Speakers", value: info.speaker_count || 0, color: "#7c3aed" },
+    ];
+    const cW = (W - M * 2 - 30) / 4;
+    stats.forEach((s, i) => {
+      const x = M + i * (cW + 10);
+      doc.roundedRect(x, y, cW, 52, 5).fill("#f8fafc").stroke("#e2e8f0");
+      doc.fontSize(20).font("Helvetica-Bold").fillColor(s.color).text(String(s.value), x + 10, y + 6, { width: cW - 20 });
+      doc.fontSize(8).font("Helvetica").fillColor("#64748b").text(s.label, x + 10, y + 34, { width: cW - 20 });
+    });
+    y += 66;
+
+    function secHead(label, color) {
+      if (y + 40 > 820) { doc.addPage(); y = 40; }
+      doc.rect(M, y, W - M * 2, 28).fill(color);
+      doc.fontSize(11).font("Helvetica-Bold").fillColor("white").text(label, M + 12, y + 8);
+      y += 36;
     }
-    doc.moveDown();
-    if (actions.rows.length) {
-      doc.fontSize(14).font("Helvetica-Bold").text("ACTION ITEMS");
-      doc.moveDown(0.5);
-      actions.rows.forEach(r => {
-        doc.fontSize(11).font("Helvetica-Bold").text(r.action);
-        if (r.assigned_to) doc.fontSize(10).font("Helvetica").fillColor("gray").text("  Assigned to: "+r.assigned_to);
-        if (r.due_date) doc.fontSize(10).fillColor("gray").text("  Due: "+r.due_date);
-        doc.fillColor("black").moveDown(0.5);
+
+    // Decisions
+    if (decisions.rows.length > 0) {
+      secHead("DECISIONS  (" + decisions.rows.length + ")", "#16a34a");
+      decisions.rows.forEach((r, i) => {
+        const tw = W - M * 2 - 44;
+        const th = Math.max(38, doc.heightOfString(r.decision, { width: tw }) + 18);
+        if (y + th > 820) { doc.addPage(); y = 40; }
+        doc.roundedRect(M, y, W - M * 2, th, 4).fill("#f0fdf4").stroke("#bbf7d0");
+        doc.rect(M, y, 4, th).fill("#16a34a");
+        doc.circle(M + 22, y + th / 2, 9).fill("#16a34a");
+        doc.fontSize(8).font("Helvetica-Bold").fillColor("white").text(String(i + 1), M + 19, y + th / 2 - 4);
+        doc.fontSize(10).font("Helvetica").fillColor("#1e293b").text(r.decision, M + 38, y + 9, { width: tw });
+        y += th + 5;
+      });
+      y += 8;
+    }
+
+    // Action Items
+    if (actions.rows.length > 0) {
+      if (y + 50 > 820) { doc.addPage(); y = 40; }
+      secHead("ACTION ITEMS  (" + actions.rows.length + ")", "#d97706");
+      actions.rows.forEach((r, i) => {
+        const tw = W - M * 2 - 44;
+        const parts = [];
+        if (r.assigned_to) parts.push("Assigned to: " + r.assigned_to);
+        if (r.due_date) parts.push("Due: " + r.due_date);
+        parts.push(r.completed ? "Completed" : "Pending");
+        const meta = parts.join("   |   ");
+        const th = Math.max(52, doc.heightOfString(r.action, { width: tw }) + 30);
+        if (y + th > 820) { doc.addPage(); y = 40; }
+        doc.roundedRect(M, y, W - M * 2, th, 4).fill(r.completed ? "#f8fafc" : "#fffbeb").stroke(r.completed ? "#e2e8f0" : "#fde68a");
+        doc.rect(M, y, 4, th).fill("#d97706");
+        doc.circle(M + 22, y + 16, 9).fill("#d97706");
+        doc.fontSize(8).font("Helvetica-Bold").fillColor("white").text(String(i + 1), M + 19, y + 12);
+        doc.fontSize(10).font("Helvetica-Bold").fillColor(r.completed ? "#94a3b8" : "#1e293b").text(r.action, M + 38, y + 8, { width: tw });
+        doc.fontSize(8).font("Helvetica").fillColor("#64748b").text(meta, M + 38, y + th - 16, { width: tw });
+        y += th + 5;
       });
     }
+
+    doc.fontSize(8).font("Helvetica").fillColor("#94a3b8")
+       .text("Meeting Intelligence Hub", 0, 828, { align: "center", width: W });
     doc.end();
-  } catch (e) { res.status(500).json({ error: "PDF export failed" }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "PDF export failed" }); }
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log("Server running on http://localhost:" + PORT));
