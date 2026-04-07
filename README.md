@@ -6,11 +6,15 @@
 
 ---
 
-## 📌 Overview
+🧩 The Problem
 
-Meeting Intelligence Hub transforms raw meeting transcripts into structured insights like decisions, action items, and contextual answers using AI.
+Organizations conduct frequent meetings, but important information like decisions, action items, and insights often gets buried in long transcripts. This leads to missed tasks, repeated discussions, and reduced productivity.
 
----
+💡 The Solution
+
+Meeting Intelligence Hub is an AI-powered platform that transforms unstructured meeting transcripts into structured, actionable insights.
+
+It automatically extracts key decisions and action items, performs sentiment analysis and provides a chatbot interface (RAG-based) for quick and contextual information retrieval. This helps users efficiently understand and act on meeting outcomes.
 
 ## ✨ Features
 
@@ -47,12 +51,23 @@ AI (Groq API)
 
 ## 🛠️ Tech Stack
 
-* **Frontend:** React, Vite, Tailwind CSS
-* **Backend:** Node.js, Express
-* **Database:** NeonDB (PostgreSQL)
-* **AI:** Groq API
-* **Deployment:** Vercel + Render
+**Programming Languages:
+JavaScript
 
+**Frontend:
+React, Vite, Tailwind CSS
+
+**Backend:
+Node.js, Express.js
+
+**Database:
+PostgreSQL (NeonDB)
+
+**APIs & Tools:
+Groq API, RAG
+
+**Deployment:
+Vercel, Render
 ---
 
 ## ⚙️ Setup (Local)
@@ -106,6 +121,18 @@ VITE_API_URL=https://meeting-hub-backend-nnoc.onrender.com
 ##
 
 ---
+
+🎥 Video Demo
+
+(Add your Loom/video link here)
+
+🔗 GitHub Repository
+
+https://github.com/vinaya-anil954/meeting-intelligence-hub
+
+🧠 Approach Document
+
+[View Approach Document](./Meeting_Intelligence_Hub_Approach_Document.docx)
 
 ## 🧠 Key Learnings
 
