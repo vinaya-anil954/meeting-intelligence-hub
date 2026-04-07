@@ -124,7 +124,7 @@ VITE_API_URL=https://meeting-hub-backend-nnoc.onrender.com
 
 🎥 Video Demo
 
-(Add your Loom/video link here)
+https://www.loom.com/share/b1fce18b87744705b76ebb1f39ec0775
 
 🔗 GitHub Repository
 
